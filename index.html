@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Ferramenta Interativa de Estudo</title>
+  <style>
+    :root{
+      --bg: #0f1220;
+      --card: #1e1a2b;
+      --card-alt: #27253a;
+      --pri: #7bd389;
+      --text: #e7e6f0;
+      --muted: #a29bb3;
+      --accent: #4aa3ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; font-family: Inter, system-ui, Arial, sans-serif; background: linear-gradient(135deg, #0b0a14 0%, #0f1230 60%, #0b0a14 100%); color: var(--text); }
+    header { padding: 20px; text-align: center; }
+    header h1 { margin: 0; font-size: 1.6rem; }
+    header p { margin: 6px 0 0; color: var(--muted); }
+
+    .toolbar { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; padding: 0 20px 12px; align-items: end; }
+    .toolbar label { font-size: .9rem; color: var(--muted); }
+    select, input[type="text"] {
+      padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #141226; color: var(--text);
+      width: 100%; outline: none;
+    }
+    button { padding: 10px 14px; border-radius: 8px; border: none; background: var(--accent); color: white; cursor: pointer; }
+    button.secondary { background: #2a2a2a; color: #eee; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    main { padding: 12px 20px 40px; display: grid; grid-template-columns: 360px 1fr; gap: 20px; align-items: start; }
+    @media (max-width: 900px){
+      main { grid-template-columns: 1fr; }
+    }
+
+    .card-panel, .quiz-panel { background: rgba(255,255,255,.04); border: 1px solid #2a2a2a; border-radius: 12px; padding: 14px; }
+
+    /* Cartão de estudo (flashcards) */
+    .card-area { display: grid; place-items: center; padding: 16px; }
+    .flip-card { background: transparent; width: 100%; height: 240px; perspective: 1000px; }
+    .flip-card-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s; transform-style: preserve-3d; }
+    .flip-card.is-flipped .flip-card-inner { transform: rotateY(180deg); }
+    .flip-card-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; padding: 20px; border-radius: 14px; }
+    .flip-card-front  { background: linear-gradient(#2a2a3a, #1b1b2b); color: #fff; }
+    .flip-card-back   { background: linear-gradient(#283041, #1b1c2b); color: #e8e8e8; transform: rotateY(180deg); }
+    .card-title { font-weight: 600; font-size: 1.05rem; }
+
+    .flip-actions { display: flex; gap: 10px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+    .stats { font-size: .92rem; color: var(--muted); margin-top: 6px; }
+
+    /* Seção de notas por carta */
+    .notes { margin-top: 12px; display: grid; gap: 6px; }
+    textarea { width: 100%; height: 90px; resize: vertical; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #0f1020; color: #fff; }
+
+    /* Área de quiz (simplificada) */
+    .quiz-area { display: none; padding: 12px; }
+    .quiz-area.active { display: block; }
+    .quiz-question { font-weight: 600; margin-bottom: 8px; }
+    .quiz-option { display: block; margin: 6px 0; }
+    .quiz-result { margin-top: 8px; font-weight: 600; }
+
+    .panel-title { font-size: 1rem; font-weight: 600; margin-bottom: 8px; }
+
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Ferramenta Interativa de Estudo</h1>
+    <p>Cartões de estudo, busca rápida e progresso salvo localmente.</p>
+  </header>
+
+  <div class="toolbar" aria-label="Ferramentas de estudo">
+    <div>
+      <label for="deckSelect">D de estudo</label>
+      <select id="deckSelect" title="Selecionar deck">
+        <!-- opções preenchidas dinamicamente -->
+      </select>
+    </div>
+
+    <div>
+      <label for="modeSelect">Modo</label>
+      <select id="modeSelect" title="Escolha o modo">
+        <option value="flashcards">Flashcards</option>
+        <option value="quiz">Quiz</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="searchInput">Pesquisar perguntas</label>
+      <input type="text" id="searchInput" placeholder="Busque por pergunta ou resposta" />
+    </div>
+
+    <div style="align-self:end;">
+      <button id="shuffleBtn" title="Embaralhar cartões">Embaralhar</button>
+    </div>
+  </div>
+
+  <main>
+    <!-- Coluna esquerda: cartão e notas -->
+    <section class="card-panel" aria-label="Área de estudo">
+      <div class="panel-title">Cartão atual</div>
+      <div class="card-area" id="cardArea">
+        <div id="flashcard" class="flip-card" aria-label="Cartão">
+          <div class="flip-card-inner" id="flipCardInner">
+            <div class="flip-card-face flip-card-front" id="cardFront">
+              {/* conteúdo preenchido dinamicamente */}
+              Pergunta
+            </div>
+            <div class="flip-card-face flip-card-back" id="cardBack">
+              Resposta
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flip-actions" aria-label="Ações do cartão">
+        <button id="flipBtn" title="Mostrar/Esconder Resposta">Mostrar Resposta</button>
+        <button id="knownBtn" title="Marcar como Conhecido">Conheci</button>
+        <button id="unknownBtn" title="Marcar como Não Conhecido">Não Conheci</button>
+        <button id="nextBtn" title="Próximo cartão">Próximo</button>
+      </div>
+
+      <div class="notes" aria-label="Notas do cartão">
+        <label for="notesArea" style="font-size:.95rem; color:var(--muted);">Notas sobre esta carta</label>
+        <textarea id="notesArea" placeholder="Escreva notas para este cartão..." spellcheck="false"></textarea>
+        <button id="saveNotesBtn" class="secondary" style="width:max-content;">Salvar notas</button>
+        <div id="notesStatus" class="stats" style="margin-top:6px;">Sem notas salvas.</div>
+      </div>
+    </section>
+
+    <!-- Coluna direita: área de estatísticas/quiz -->
+    <section class="quiz-panel panel" aria-label="Área de quiz e estatísticas">
+      <div class="panel-title" id="panelTitle">Progresso</div>
+
+      <div id="statsPanel" class="stats" style="margin-bottom: 8px;">
+        Deck: <span id="deckNameLabel">—</span> &
+        Total: <span id="deckTotalLabel">0</span> • 
+        Já vistos: <span id="deckSeenLabel">0</span> • 
+        Conhecidos: <span id="deckKnownLabel">0</span>
+      </div>
+
+      <div class="quiz-area" id="quizArea" aria-label="Área de Quiz">
+        <div class="quiz-question" id="quizQuestion">Pergunta do quiz</div>
+        <div id="quizOptions"></div>
+        <button id="quizSubmitBtn" style="margin-top:8px;">Responder</button>
+        <div id="quizFeedback" class="quiz-result" style="margin-top:6px;"></div>
+        <button id="quizNextBtn" class="secondary" style="margin-top:6px; display:none;">Próximo</button>
+      </div>
+
+      <div id="noDeckMsg" class="stats" style="margin-top:8px;">Selecione um deck para começar.</div>
+    </section>
+  </main>
+
+  <script>
+    // Dados de exemplo: 3 decks com algumas cards
+    const decks = [
+      {
+        id: 'mat-alg',
+        name: 'Matemática - Álgebra',
+        cards: [
+          { id: 'a1', q: 'O que é uma função injetora?', a: 'Cada elemento do domínio mapeia para um elemento distinto do contradomínio.' },
+          { id: 'a2', q: 'Como resolver x em uma equação linear básica: 3x + 5 = 20?', a: 'x = 5' },
+          { id: 'a3', q: 'Qual é o inverso de uma função bijetora?', a: 'O inverso f⁻¹ existe e é também uma bijeção.' },
+          { id: 'a4', q: 'O que é um polinômio de grau 2?', a: 'Um polinômio da forma ax^2 + bx + c, com a ≠ 0.' }
+        ]
+      },
+      {
+        id: 'bio-cel',
+        name: 'Biologia - Células',
+        cards: [
+          { id: 'b1', q: 'Qual organela é responsável pela produção de energia?', a: 'Mitocôndria' },
+          { id: 'b2', q: 'Qual é a membrana que envolve a célula?', a: 'Membrana plasmática' },
+          { id: 'b3', q: 'Qual organela realiza a fotossíntese?', a: 'Cloroplasto' },
+          { id: 'b4', q: 'O que é a membrana plasmática composta principalmente por?', a: 'Duas camadas de fosfolipídios com proteínas embutidas' }
+        ]
+      },
+      {
+        id: 'hist-fr',
+        name: 'História - Revoluções',
+        cards: [
+          { id: 'h1', q: 'Em que ano ocorreu a Revolução Francesa?', a: '1789' },
+          { id: 'h2', q: 'Qual foi o principal documento proclamando direitos no período moderno?', a: 'Declaração de Direitos do Homem e do Cidadão' },
+          { id: 'h3', q: 'Quem foi o líder da Revolução Russa de 1917?', a: 'Vladimir Lenin' },
+          { id: 'h4', q: 'O que foi a Idade das Máquinas?', a: 'Período de grandes transformações industriais no século XVIII' }
+        ]
+      }
+    ];
+
+    // Estado atual
+    let currentDeck = null;
+    let mode = 'flashcards'; // 'flashcards' ou 'quiz'
+    let visibleCards = []; // cards do deck filtrados pela busca
+    let cardIndex = 0;
+    let isFlipped = false;
+
+    // Quiz state
+    let quizIndex = 0;
+    let quizQuestions = []; // indexes de cards usados no quiz
+    let quizSelected = null; // index da opção escolhida
+    let quizDone = false;
+
+    // Progresso salvo no localStorage
+    const STORAGE_KEY = 'studyToolProgress_v1';
+    let progress = {}; // { deckId: { seen: 0, known: 0, total: N } }
+
+    // UI Elements
+    const deckSelect = document.getElementById('deckSelect');
+    const modeSelect = document.getElementById('modeSelect');
+    const searchInput = document.getElementById('searchInput');
+    const shuffleBtn = document.getElementById('shuffleBtn');
+
+    const flipBtn = document.getElementById('flipBtn');
+    const flashcardEl = document.getElementById('flashcard');
+    const flipCardInner = document.getElementById('flipCardInner');
+    const cardFront = document.getElementById('cardFront');
+    const cardBack = document.getElementById('cardBack');
+    const knownBtn = document.getElementById('knownBtn');
+    const unknownBtn = document.getElementById('unknownBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const notesArea = document.getElementById('notesArea');
+    const saveNotesBtn = document.getElementById('saveNotesBtn');
+    const notesStatus = document.getElementById('notesStatus');
+    const panelTitle = document.getElementById('panelTitle');
+    const deckNameLabel = document.getElementById('deckNameLabel');
+    const deckTotalLabel = document.getElementById('deckTotalLabel');
+    const deckSeenLabel = document.getElementById('deckSeenLabel');
+    const deckKnownLabel = document.getElementById('deckKnownLabel');
+    const quizArea = document.getElementById('quizArea');
+    const quizQuestion = document.getElementById('quizQuestion');
+    const quizOptions = document.getElementById('quizOptions');
+    const quizSubmitBtn = document.getElementById('quizSubmitBtn');
+    const quizFeedback = document.getElementById('quizFeedback');
+    const quizNextBtn = document.getElementById('quizNextBtn');
+    const noDeckMsg = document.getElementById('noDeckMsg');
+    const statsPanel = document.getElementById('statsPanel');
+    const deckTotalLabel2 = document.getElementById('deckTotalLabel');
+    // Função utilitária para obter deck atual
+    function getDeckById(id) {
+      return decks.find(d => d.id === id);
+    }
+
+    // Inicializar: carregar decks na UI
+    function init() {
+      // populate deckSelect
+      deckSelect.innerHTML = '';
+      const allOption = document.createElement('option');
+      allOption.value = '';
+      allOption.textContent = 'Selecione um deck';
+      deckSelect.appendChild(allOption);
+      decks.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        deckSelect.appendChild(opt);
+      });
+      // Load progress do storage
+      const raw = localStorage.getItem(STORAGE_KEY);
+      progress = raw ? JSON.parse(raw) : {};
+      // Eventos
+      deckSelect.addEventListener('change', onDeckChange);
+      modeSelect.addEventListener('change', onModeChange);
+      searchInput.addEventListener('input', onSearchInput);
+      shuffleBtn.addEventListener('click', shuffleVisible);
+      flipBtn.addEventListener('click', onFlip);
+      nextBtn.addEventListener('click', showNextCard);
+      knownBtn.addEventListener('click', () => markKnown(true));
+      unknownBtn.addEventListener('click', () => markKnown(false));
+      saveNotesBtn.addEventListener('click', saveNotes);
+      quizSubmitBtn.addEventListener('click', onQuizSubmit);
+      quizNextBtn.addEventListener('click', () => {
+        quizNextBtn.style.display = 'none';
+        quizFeedback.textContent = '';
+        loadQuizQuestion();
+      });
+
+      // Carregar primeira deck opcional (sem selecionar)
+      // Se não houver deck selecionado, mostramos mensagem
+      noDeckMsg.style.display = 'block';
+      quizArea.style.display = 'none';
+    }
+
+    function onDeckChange() {
+      const deckId = deckSelect.value;
+      currentDeck = deckId ? getDeckById(deckId) : null;
+      if (!currentDeck) {
+        noDeckMsg.style.display = 'block';
+        flashcardEl.style.display = 'none';
+        quizArea.style.display = 'none';
+        return;
+      }
+      noDeckMsg.style.display = 'none';
+      // reset search e estado
+      searchInput.value = '';
+      cardIndex = 0;
+      isFlipped = false;
+      // preparar cards visíveis
+      updateVisibleCards();
+      // atualizar UI
+      deckNameLabel.textContent = currentDeck.name;
+      deckTotalLabel.textContent = currentDeck.cards.length;
+      // manter/progredir no deck
+      renderCurrentCardFlash();
+      // atualização de progresso no painel
+      updateProgressPanel();
+      // mostrar flashcards por padrão
+      switchToFlashcards();
+    }
+
+    function onModeChange() {
+      mode = modeSelect.value;
+      if (!currentDeck) return;
+      if (mode === 'flashcards') {
+        flashcardEl.style.display = 'block';
+        quizArea.style.display = 'none';
+        renderCurrentCardFlash();
+      } else {
+        // preparar quiz
+        flashcardEl.style.display = 'none';
+        quizArea.style.display = 'block';
+        startQuiz();
+      }
+    }
+
+    function onSearchInput() {
+      // atualiza cards visíveis com base na busca
+      updateVisibleCards();
+      // reinicia para o início
+      cardIndex = 0;
+      isFlipped = false;
+      renderCurrentCardFlash();
+    }
+
+    function updateVisibleCards() {
+      const q = (searchInput.value || '').toLowerCase();
+      if (!currentDeck) { visibleCards = []; return; }
+      if (!q) {
+        visibleCards = currentDeck.cards.slice();
+      } else {
+        visibleCards = currentDeck.cards.filter(c => 
+          c.q.toLowerCase().includes(q) || c.a.toLowerCase().includes(q)
+        );
+      }
+      // se não houver cards, prepare mensagem
+      if (visibleCards.length === 0) {
+        cardFront.textContent = 'Nenhum cartão corresponde à busca.';
+        cardBack.textContent = '';
+      } else {
+        // se tiver cards, mantenha o índice mínimo
+        if (cardIndex >= visibleCards.length) cardIndex = 0;
+      }
+      // salvar posição para o deck atual
+      // (opcional: não persistimos aqui)
+    }
+
+    function renderCurrentCardFlash() {
+      if (!visibleCards.length) {
+        cardFront.textContent = 'Nenhum cartão disponível para o critério atual.';
+        cardBack.textContent = '';
+        return;
+      }
+      const c = visibleCards[cardIndex];
+      // A cada apresentação de cartão, registrar "seen"
+      recordSeen(c.id);
+      isFlipped = false;
+      flashcardEl.classList.remove('is-flipped');
+      // preencher conteúdo
+      cardFront.textContent = c.q;
+      cardBack.textContent = c.a;
+      // carregar notas salvas
+      loadNotesForCard(c.id);
+    }
+
+    function onFlip() {
+      if (!visibleCards.length) return;
+      isFlipped = !isFlipped;
+      flashcardEl.classList.toggle('is-flipped', isFlipped);
+    }
+
+    function showNextCard() {
+      if (!visibleCards.length) return;
+      cardIndex = (cardIndex + 1) % visibleCards.length;
+      renderCurrentCardFlash();
+    }
+
+    function markKnown(isKnown) {
+      if (!currentDeck || !visibleCards.length) return;
+      const c = visibleCards[cardIndex];
+      // atualizar progresso
+      const dId = currentDeck.id;
+      if (!progress[dId]) progress[dId] = { seen: 0, known: 0, total: currentDeck.cards.length };
+      // já vimos
+      progress[dId].seen = (progress[dId].seen || 0) + 1;
+      if (isKnown) {
+        progress[dId].known = (progress[dId].known || 0) + 1;
+      }
+      saveProgress();
+      // próximo cartão opcional
+      showNextCard();
+      updateProgressPanel();
+    }
+
+    function recordSeen(cardId) {
+      // registra apenas uma vez por apresentação, para cada cartão apresentado
+      const dId = currentDeck ? currentDeck.id : null;
+      if (!dId) return;
+      if (!progress[dId]) progress[dId] = { seen: 0, known: 0, total: currentDeck.cards.length };
+      progress[dId].seen = (progress[dId].seen || 0) + 1;
+      saveProgress();
+      updateProgressPanel();
+    }
+
+    function saveProgress() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    }
+
+    function updateProgressPanel() {
+      if (!currentDeck) return;
+      const dId = currentDeck.id;
+      const p = progress[dId] || { seen: 0, known: 0, total: currentDeck.cards.length };
+      deckSeenLabel.textContent = p.seen ?? 0;
+      deckKnownLabel.textContent = p.known ?? 0;
+      deckTotalLabel.textContent = currentDeck.cards.length;
+      deckNameLabel.textContent = currentDeck.name;
+      // resumo rápido de acurácia
+      const totalSeen = p.seen || 0;
+      const known = p.known || 0;
+      const acc = totalSeen > 0 ? Math.round((known / totalSeen) * 100) : 0;
+      statsPanel.innerHTML = `Deck: ${currentDeck.name} • Total: ${currentDeck.cards.length} • Visto: ${totalSeen} • Conhecido: ${known} • Acurácia: ${acc}%`;
+    }
+
+    // Notas por carta
+    function loadNotesForCard(cardId) {
+      const key = 'notes_' + cardId;
+      const val = localStorage.getItem(key) || '';
+      notesArea.value = val;
+      // status
+      notesStatus.textContent = val ? 'Notas carregadas.' : 'Sem notas para esta carta.';
+    }
+
+    function saveNotes() {
+      if (!currentDeck || !visibleCards.length) return;
+      const c = visibleCards[cardIndex];
+      const key = 'notes_' + c.id;
+      const text = notesArea.value;
+      localStorage.setItem(key, text);
+      notesStatus.textContent = 'Notas salvas.';
+    }
+
+    // Quiz (versão básica)
+    function startQuiz() {
+      if (!currentDeck) return;
+      // preparar perguntas: usar todas as cards do deck, embaralhadas
+      quizQuestions = currentDeck.cards.map((c, idx) => idx);
+      shuffleArray(quizQuestions);
+      quizIndex = 0;
+      quizDone = false;
+      loadQuizQuestion();
+    }
+
+    function loadQuizQuestion() {
+      if (!currentDeck || quizIndex >= quizQuestions.length) {
+        quizQuestion.textContent = 'Quiz concluído. Escolha outro deck ou mude o modo para continuar estudando.';
+        quizOptions.innerHTML = '';
+        quizSubmitBtn.style.display = 'none';
+        quizNextBtn.style.display = 'none';
+        quizArea.style.display = 'block';
+        return;
+      }
+      const cardIdx = quizQuestions[quizIndex];
+      const c = currentDeck.cards[cardIdx];
+      quizQuestion.textContent = `Pergunta: ${c.q}`;
+      // gerar 4 opções, incluindo a correta
+      const options = new Set();
+      options.add(c.a);
+      while (options.size < 4 && options.size < currentDeck.cards.length) {
+        const rand = currentDeck.cards[Math.floor(Math.random() * currentDeck.cards.length)].a;
+        options.add(rand);
+      }
+      const shuffled = Array.from(options);
+      shuffleArray(shuffled);
+      quizOptions.innerHTML = '';
+      shuffled.forEach((opt, i) => {
+        const label = document.createElement('label');
+        label.className = 'quiz-option';
+        const r = document.createElement('input');
+        r.type = 'radio';
+        r.name = 'quizOption';
+        r.value = opt;
+        label.appendChild(r);
+        label.appendChild(document.createTextNode(' ' + opt));
+        quizOptions.appendChild(label);
+      });
+      quizSubmitBtn.style.display = 'inline-block';
+      quizNextBtn.style.display = 'none';
+      quizFeedback.textContent = '';
+      quizSelected = null;
+    }
+
+    function onQuizSubmit() {
+      // pegar a opção selecionada
+      const radios = quizOptions.querySelectorAll('input[type="radio"]');
+      let chosen = null;
+      radios.forEach(r => {
+        if (r.checked) chosen = r.value;
+      });
+      if (chosen === null) {
+        quizFeedback.textContent = 'Selecione uma opção antes de enviar.';
+        return;
+      }
+      // verificar
+      const c = currentDeck.cards[quizQuestions[quizIndex]];
+      const isCorrect = chosen === c.a;
+      quizFeedback.textContent = isCorrect ? 'Correto!' : `Incorreto. A resposta correta é: ${c.a}`;
+      quizIndex++;
+      quizSubmitBtn.style.display = 'none';
+      quizNextBtn.style.display = 'inline-block';
+      // atualiza progresso simples
+      const dId = currentDeck.id;
+      if (!progress[dId]) progress[dId] = { seen: 0, known: 0, total: currentDeck.cards.length };
+      progress[dId].seen = (progress[dId].seen || 0) + 1;
+      if (isCorrect) progress[dId].known = (progress[dId].known || 0) + 1;
+      saveProgress();
+      updateProgressPanel();
+    }
+
+    // utilidades
+    function shuffleArray(arr){
+      for(let i = arr.length - 1; i > 0; i--){
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    }
+
+    function switchToFlashcards() {
+      mode = 'flashcards';
+      modeSelect.value = 'flashcards';
+      flashcardEl.style.display = 'block';
+      quizArea.style.display = 'none';
+      loadVisibleForFlashcards();
+      renderCurrentCardFlash();
+    }
+
+    function loadVisibleForFlashcards() {
+      if (!currentDeck) { visibleCards = []; return; }
+      // recompor
+      visibleCards = currentDeck.cards.slice();
+      // aplicar busca
+      const q = (searchInput.value || '').toLowerCase();
+      if (q) visibleCards = visibleCards.filter(c => c.q.toLowerCase().includes(q) || c.a.toLowerCase().includes(q));
+      if (visibleCards.length === 0) {
+        // fallback
+        visibleCards = currentDeck.cards.slice();
+      }
+      cardIndex = 0;
+    }
+
+    // Inicialização completa
+    init();
+  </script>
+</body>
+</html>
